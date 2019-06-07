@@ -17,18 +17,20 @@ import os
 from utils import load_train_data, load_test_data, load, KmnistCallback
 import wandb
 from wandb.keras import WandbCallback
+from keras.preprocessing.image import ImageDataGenerator
 
 # default configuration / hyperparameter values
 # you can modify these below or via command line
 MODEL_NAME = ""
 DATA_HOME = "./dataset" 
 BATCH_SIZE = 128
-EPOCHS = 10
+EPOCHS = 30
 L1_SIZE = 32
 L2_SIZE = 64
-DROPOUT_1_RATE = 0.25
-DROPOUT_2_RATE = 0.5
-FC1_SIZE = 128
+L3_SIZE = 128
+DROPOUT_1_RATE = 0.2
+DROPOUT_2_RATE = 0.3
+FC1_SIZE = 256
 NUM_CLASSES = 10
 #NUM_CLASSES_K49 = 49
 
@@ -50,6 +52,7 @@ def train_cnn(args):
     "epochs" : args.epochs,
     "l1_size": args.l1_size,
     "l2_size" : args.l2_size,
+    "l3_size" : args.l3_size,
     "dropout_1" : args.dropout_1,
     "dropout_2" : args.dropout_2,
     "fc1_size" : args.fc1_size
@@ -86,25 +89,41 @@ def train_cnn(args):
   y_train = tf.keras.utils.to_categorical(y_train, NUM_CLASSES)
   y_test = tf.keras.utils.to_categorical(y_test, NUM_CLASSES)
 
+  datagen = ImageDataGenerator(rotation_range=10,
+                               width_shift_range=0.2,
+                               height_shift_range=0.2)
+  datagen.fit(x_train)
+
   # Build model
   model = tf.keras.Sequential()
   model.add(layers.Conv2D(args.l1_size, kernel_size=(3, 3),
-                 activation='relu',
+				 activation='relu',
                  input_shape=input_shape))
+  model.add(layers.BatchNormalization())
+  model.add(layers.Dropout(args.dropout_1))
+
   model.add(layers.Conv2D(args.l2_size, (3, 3), activation='relu'))
+  model.add(layers.BatchNormalization())
   model.add(layers.MaxPooling2D(pool_size=(2, 2)))
   model.add(layers.Dropout(args.dropout_1))
+
+  model.add(layers.Conv2D(args.l3_size, (3, 3), activation='relu'))
+  model.add(layers.BatchNormalization())
+  model.add(layers.MaxPooling2D(pool_size=(2, 2), padding='same'))
+  model.add(layers.Dropout(args.dropout_1))
+
   model.add(layers.Flatten())
   model.add(layers.Dense(args.fc1_size, activation='relu'))
+  model.add(layers.BatchNormalization())
   model.add(layers.Dropout(args.dropout_2))
   model.add(layers.Dense(args.num_classes, activation='softmax'))
+  model.summary()
 
   model.compile(loss="categorical_crossentropy",
               optimizer="adadelta",
               metrics=['accuracy'])
 
-  model.fit(x_train, y_train,
-            batch_size=args.batch_size,
+  model.fit_generator(datagen.flow(x_train, y_train, batch_size=args.batch_size),
             epochs=args.epochs,
             verbose=1,
             validation_data=(x_test, y_test),
@@ -167,6 +186,11 @@ if __name__ == "__main__":
     type=int,
     default=L2_SIZE,
     help="size of second conv layer")
+  parser.add_argument(
+    "--l3_size",
+    type=int,
+    default=L3_SIZE,
+    help="size of third conv layer")
   parser.add_argument(
     "--num_classes",
     type=int,
